@@ -44,15 +44,18 @@ The Docker image accepts the following parameters:
 * If you want to start without the discovery service, use the `CLUSTER_JOIN` variable. Empty variables will start a new cluster. To join an existing cluster, set `CLUSTER_JOIN` to the list of IP addresses running cluster nodes.
 * `TTL` by default is 30 seconds. Container will report every `TTL - 2` seconds when it's alive (wsrep_cluster_state\_comment=Synced) via `report_status.sh`. If a container is down, it will no longer send an update to etcd thus the key (wsrep_cluster_state_comment) is removed after expiration. This simply indicates that the registered node is no longer synced with the cluster and it will be skipped when constructing the Galera communication address.
 
+Minimum of 3 containers is recommended for high availability. Running standalone is also possible with standard "docker run" command as shown further down.
+
 ### Docker Engine Swarm Mode ###
+
+#### Epheremal Storage ####
 
 Assuming:
 
-* Directory ``/mnt/docker/mysql`` is exist on all Docker host for persistent storage.
 * etcd cluster is running on 192.168.55.111:2379, 192.168.55.112:2379 and 192.168.55.113:2379.
 * Created an overlay network called ``galera-net``.
 
-Then, to run a three-node Percona XtraDB Cluster on Docker Swarm mode:
+Then, to run a three-node Percona XtraDB Cluster on Docker Swarm mode (with epheremal storage):
 
 ```bash
 $ docker service create \
@@ -60,13 +63,59 @@ $ docker service create \
 --replicas 3 \
 -p 3306:3306 \
 --network galera-net \
---mount type=bind,src=/mnt/docker/mysql,dst=/var/lib/mysql \
 --env MYSQL_ROOT_PASSWORD=mypassword \
 --env DISCOVERY_SERVICE=192.168.55.111:2379,192.168.55.112:2379,192.168.55.113:2379 \
 --env XTRABACKUP_PASSWORD=mypassword \
 --env CLUSTER_NAME=my_wsrep_cluster \
 severalnines/pxc56
 ```
+
+#### Persistent Storage ####
+
+Assuming:
+
+* Directory ``/mnt/docker/mysql`` is exist on all Docker host for persistent storage.
+* etcd cluster is running on 192.168.55.111:2379, 192.168.55.112:2379 and 192.168.55.113:2379.
+* Created an overlay network called ``galera-net``.
+
+Then, to run a three-node Percona XtraDB Cluster on Docker Swarm mode (with persistent storage):
+
+```bash
+$ docker service create \
+--name mysql-galera \
+--replicas 3 \
+-p 3306:3306 \
+--network galera-net \
+--mount type=volume,source=galera-vol,destination=/var/lib/mysql \
+--env MYSQL_ROOT_PASSWORD=mypassword \
+--env DISCOVERY_SERVICE=192.168.55.111:2379,192.168.55.112:2379,192.168.55.113:2379 \
+--env XTRABACKUP_PASSWORD=mypassword \
+--env CLUSTER_NAME=my_wsrep_cluster \
+severalnines/pxc56
+```
+
+#### Custom my.cnf ####
+
+Assuming:
+
+* Directory ``/mnt/docker/mysql-config`` is exist on all Docker host for data volume mapping. All custom my.cnf should be located under this directory.
+* etcd cluster is running on 192.168.55.111:2379, 192.168.55.112:2379 and 192.168.55.113:2379.
+* Created an overlay network called ``galera-net``.
+
+Then, to run a three-node Percona XtraDB Cluster on Docker Swarm mode:
+
+$ docker service create \
+--name mysql-galera \
+--replicas 3 \
+-p 3306:3306 \
+--network galera-net \
+--mount type=volume,source=galera-vol,destination=/var/lib/mysql \
+--mount type=bind,src=/mnt/docker/mysql-config,dst=/etc/my.cnf.d \
+--env MYSQL_ROOT_PASSWORD=mypassword \
+--env DISCOVERY_SERVICE=192.168.55.111:2379,192.168.55.112:2379,192.168.55.113:2379 \
+--env XTRABACKUP_PASSWORD=mypassword \
+--env CLUSTER_NAME=my_wsrep_cluster \
+severalnines/pxc56
 
 Verify with:
 
@@ -74,26 +123,10 @@ Verify with:
 $ docker service ps mysql-galera
 ```
 
-Application should connect to the service via virtual IP address assigned by Docker Swarm:
+Application should connect to the service via virtual IP address assigned by Docker Swarm mode:
 
 ```bash
 $ docker service inspect mysql-galera -f "{{ .Endpoint.VirtualIPs }}"
-```
-
-To scale up, the new containers must be running on the same network and `CLUSTER_NAME` environment:
-
-```bash
-$ docker service create \
---name mysql-galera-scale \
---replicas 2 \
--p 3306:3307 \
---network galera-net \
---mount type=bind,src=/mnt/docker/mysql-scale,dst=/var/lib/mysql \
---env MYSQL_ROOT_PASSWORD=mypassword \
---env DISCOVERY_SERVICE=192.168.55.111:2379,192.168.55.112:2379,192.168.55.113:2379 \
---env XTRABACKUP_PASSWORD=mypassword \
---env CLUSTER_NAME=my_wsrep_cluster \
-severalnines/pxc56
 ```
 
 ### Kubernetes ###
@@ -139,11 +172,11 @@ $ docker ps
 
 ## Build Image ##
 
-To build Docker image, download the Docker related files available at [our Github repository](https://github.com/severalnines/pxc56-docker):
+To build Docker image, download the Docker related files available at [our Github repository](https://github.com/severalnines/galera-docker-pxc56):
 
 ```bash
-$ git clone https://github.com/severalnines/pxc56-docker
-$ cd pxc56-docker
+$ git clone https://github.com/severalnines/galera-docker-pxc56
+$ cd galera-docker-pxc56
 $ docker build -t --rm=true severalnines/pxc56 .
 ```
 
@@ -156,7 +189,7 @@ $ docker images
 
 All nodes should report to etcd periodically with an expiring key. The default `TTL` value is 30 seconds. Container will report every `TTL - 2` seconds when it's alive (wsrep_cluster_state\_comment=Synced) via `report_status.sh`. If a container is down, it will no longer send an update to etcd thus the key (wsrep_cluster_state_comment) is removed after expiration. This simply indicates that the registered node is no longer synced with the cluster and it will be skipped when constructing the Galera communication address.
 
-To check the list of running nodes via etcd, simply run the following (assuming CLUSTER_NAME="my_wsrep_cluster"):
+To check the list of running nodes via etcd, run the following (assuming CLUSTER_NAME="my_wsrep_cluster"):
 ```javascript
 $ curl -s "http://192.168.55.111:2379/v2/keys/galera/my_wsrep_cluster?recursive=true" | python -m json.tool
 {
@@ -259,7 +292,7 @@ $ curl -s "http://192.168.55.111:2379/v2/keys/galera/my_wsrep_cluster?recursive=
 curl http://192.168.55.111:2379/v2/keys/galera/my_wsrep_cluster?recursive=true -XDELETE
 ```
 
-Or using etcdctl:
+Or using etcdctl command:
 ```bash
 etcdctl rm /galera/my_wsrep_cluster --recursive
 ```
