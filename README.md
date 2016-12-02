@@ -48,14 +48,14 @@ Minimum of 3 containers is recommended for high availability. Running standalone
 
 ### Docker Engine Swarm Mode ###
 
-#### Epheremal Storage ####
+#### Ephemeral Storage ####
 
 Assuming:
 
 * etcd cluster is running on 192.168.55.111:2379, 192.168.55.112:2379 and 192.168.55.113:2379.
 * Created an overlay network called ``galera-net``.
 
-Then, to run a three-node Percona XtraDB Cluster on Docker Swarm mode (with epheremal storage):
+Then, to run a three-node Percona XtraDB Cluster on Docker Swarm mode (with ephemeral storage):
 
 ```bash
 $ docker service create \
@@ -98,12 +98,13 @@ severalnines/pxc56
 
 Assuming:
 
-* Directory ``/mnt/docker/mysql-config`` is exist on all Docker host for data volume mapping. All custom my.cnf should be located under this directory.
+* Directory ``/mnt/docker/mysql-config`` is exist on all Docker host for data volume mapping. All custom `my.cnf` should be located under this directory.
 * etcd cluster is running on 192.168.55.111:2379, 192.168.55.112:2379 and 192.168.55.113:2379.
 * Created an overlay network called ``galera-net``.
 
 Then, to run a three-node Percona XtraDB Cluster on Docker Swarm mode:
 
+```bash
 $ docker service create \
 --name mysql-galera \
 --replicas 3 \
@@ -116,6 +117,7 @@ $ docker service create \
 --env XTRABACKUP_PASSWORD=mypassword \
 --env CLUSTER_NAME=my_wsrep_cluster \
 severalnines/pxc56
+```
 
 Verify with:
 
