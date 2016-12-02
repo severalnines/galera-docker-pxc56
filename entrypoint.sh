@@ -156,7 +156,7 @@ else
 			curl -s $URL/$ipaddr/ipaddress -X PUT -d "value=$ipaddr"
 		else
 			curl -s ${URL}?recursive=true\&sorted=true > /tmp/out
-			running_nodes=$(cat /tmp/out | jq -r '.node.nodes[].nodes[] | select(.key | contains ("wsrep_local_state_comment")) | select(.value == "Synced") | .key' | awk -F'/' '{print $(NF-1)}' | tr "\n" ' '| sed -e 's/[[:space:]]*$//')
+			running_nodes=$(cat /tmp/out | jq -r '.node.nodes[].nodes[]? | select(.key | contains ("wsrep_local_state_comment")) | select(.value == "Synced") | .key' | awk -F'/' '{print $(NF-1)}' | tr "\n" ' '| sed -e 's/[[:space:]]*$//')
 			echo
 			echo ">> Running nodes: [${running_nodes}]"
 
@@ -187,8 +187,9 @@ else
                                 echo
                                 echo >&2 ">> Retrieving list of seqno for $CLUSTER_NAME"
                                 bootstrap_flag=1
-				cluster_seqno=$(curl -s "${URL}?recursive=true\&sorted=true" | jq -r '.node.nodes[].nodes[] | select(.key | contains ("seqno")) | .value' | tr '\n' ' ')
-
+				curl -s ${URL}?recursive=true\&sorted=true > /tmp/out
+				cat /tmp/out
+				cluster_seqno=$(cat /tmp/out | jq -r '.node.nodes[].nodes[]? | select(.key | contains ("seqno")) | .value' | tr "\n" ' '| sed -e 's/[[:space:]]*$//')
                                 for i in $cluster_seqno; do
                                         if [ $i -gt $seqno ]; then
                                                 bootstrap_flag=0
@@ -198,20 +199,42 @@ else
 
 				echo
                                 if [ $bootstrap_flag -eq 1 ]; then
-                                        echo >&2 ">> This node is safe to bootstrap."
-                                        cluster_join=
+					node_to_bootstrap=$(cat /tmp/out | jq -c '.node.nodes[].nodes[]?' | grep seqno | tr ',:\"' ' ' | sort -k 11 | head -1 | awk -F'/' '{print $(NF-1)}')
+					if [ "$node_to_bootstrap" == "$ipaddr" ]; then
+	                                        echo >&2 ">> This node is safe to bootstrap."
+						cluster_join=
+					else
+						echo >&2 ">> Based on timestamp, $node_to_bootstrap is the chosen node to bootstrap."
+						echo >&2 ">> Wait again for $TTL seconds to look for a bootstrapped node."
+                                        	sleep $TTL
+	                                        curl -s ${URL}?recursive=true\&sorted=true > /tmp/out
+        	                                running_nodes2=$(cat /tmp/out | jq -r '.node.nodes[].nodes[]? | select(.key | contains ("wsrep_local_state_comment")) | select(.value == "Synced") | .key' | awk -F'/' '{print $(NF-1)}' | tr "\n" ' '| sed -e 's/[[:space:]]*$//')
+
+                	                        echo
+                        	                echo ">> Running nodes: [${running_nodes2}]"
+	
+        	                                if [ ! -z "$running_nodes2" ]; then
+                	                                cluster_join=$(join , $running_nodes2)
+                        	                else
+                                	                echo
+                                        	        echo >&2 ">> Unable to find a bootstrapped node to join."
+                                                	echo >&2 ">> Exiting."
+	                                                exit 1
+        	                                fi
+						
+					fi
                                 else
                                         echo >&2 ">> Refusing to start for now."
                                         echo >&2 ">> Wait again for $TTL seconds to look for a bootstrapped node."
                                         sleep $TTL
 					curl -s ${URL}?recursive=true\&sorted=true > /tmp/out
-					running_nodes2=$(cat /tmp/out | jq -r '.node.nodes[].nodes[] | select(.key | contains ("wsrep_local_state_comment")) | select(.value == "Synced") | .key' | awk -F'/' '{print $(NF-1)}' | tr "\n" ' '| sed -e 's/[[:space:]]*$//')
+					running_nodes3=$(cat /tmp/out | jq -r '.node.nodes[].nodes[]? | select(.key | contains ("wsrep_local_state_comment")) | select(.value == "Synced") | .key' | awk -F'/' '{print $(NF-1)}' | tr "\n" ' '| sed -e 's/[[:space:]]*$//')
 
 					echo
-					echo ">> Running nodes: [${running_nodes2}]"
+					echo ">> Running nodes: [${running_nodes3}]"
 
 					if [ ! -z "$running_nodes2" ]; then
-						cluster_join=$(join , $running_nodes2)
+						cluster_join=$(join , $running_nodes3)
 					else
 						echo
 						echo >&2 ">> Unable to find a bootstrapped node to join."

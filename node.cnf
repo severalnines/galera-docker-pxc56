@@ -20,3 +20,6 @@ wsrep_cluster_name=Theistareykjarbunga
 
 wsrep_sst_method=xtrabackup-v2
 wsrep_sst_auth="root:"
+
+
+!includedir /etc/my.cnf.d
