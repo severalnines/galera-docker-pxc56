@@ -187,9 +187,11 @@ else
                                 echo
                                 echo >&2 ">> Retrieving list of seqno for $CLUSTER_NAME"
                                 bootstrap_flag=1
+
+				# Retrieve seqno from etcd
 				curl -s ${URL}?recursive=true\&sorted=true > /tmp/out
-				cat /tmp/out
 				cluster_seqno=$(cat /tmp/out | jq -r '.node.nodes[].nodes[]? | select(.key | contains ("seqno")) | .value' | tr "\n" ' '| sed -e 's/[[:space:]]*$//')
+
                                 for i in $cluster_seqno; do
                                         if [ $i -gt $seqno ]; then
                                                 bootstrap_flag=0
@@ -199,6 +201,7 @@ else
 
 				echo
                                 if [ $bootstrap_flag -eq 1 ]; then
+					# Find the earliest node to report if there is no higher seqno
 					node_to_bootstrap=$(cat /tmp/out | jq -c '.node.nodes[].nodes[]?' | grep seqno | tr ',:\"' ' ' | sort -k 11 | head -1 | awk -F'/' '{print $(NF-1)}')
 					if [ "$node_to_bootstrap" == "$ipaddr" ]; then
 	                                        echo >&2 ">> This node is safe to bootstrap."
@@ -208,6 +211,8 @@ else
 						echo >&2 ">> Wait again for $TTL seconds to look for a bootstrapped node."
                                         	sleep $TTL
 	                                        curl -s ${URL}?recursive=true\&sorted=true > /tmp/out
+
+						# Look for a synced node again
         	                                running_nodes2=$(cat /tmp/out | jq -r '.node.nodes[].nodes[]? | select(.key | contains ("wsrep_local_state_comment")) | select(.value == "Synced") | .key' | awk -F'/' '{print $(NF-1)}' | tr "\n" ' '| sed -e 's/[[:space:]]*$//')
 
                 	                        echo
@@ -224,9 +229,11 @@ else
 						
 					fi
                                 else
-                                        echo >&2 ">> Refusing to start for now."
+                                        echo >&2 ">> Refusing to start for now because there is a node holding higher seqno."
                                         echo >&2 ">> Wait again for $TTL seconds to look for a bootstrapped node."
                                         sleep $TTL
+
+					# Look for a synced node again
 					curl -s ${URL}?recursive=true\&sorted=true > /tmp/out
 					running_nodes3=$(cat /tmp/out | jq -r '.node.nodes[].nodes[]? | select(.key | contains ("wsrep_local_state_comment")) | select(.value == "Synced") | .key' | awk -F'/' '{print $(NF-1)}' | tr "\n" ' '| sed -e 's/[[:space:]]*$//')
 
