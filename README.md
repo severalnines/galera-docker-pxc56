@@ -1,5 +1,6 @@
 # Percona XtraDB Cluster 5.6 Docker Image #
 
+
 ## Table of Contents ##
 
 1. [Overview](#overview)
@@ -8,22 +9,26 @@
 4. [Run Container](#run-container)
 5. [Build Image](#build-image)
 6. [Discovery Service](#discovery-service)
-8. [Limitations](#limitations)
-9. [Development](#development)
+7. [Known Limitations](#known-limitations)
+8. [Development](#development)
+
 
 ## Overview ##
 
-Derived from [perconalab/percona-xtradb-cluster](https://github.com/Percona-Lab/percona-xtradb-cluster-docker), the image supports running Percona XtraDB Cluster 5.6 with Docker orchestration tool like Docker Engine Swarm Mode and Kubernetes and requires etcd to operate correctly. It can also run on a standalone environment. The image supports work in Docker Network, including overlay networks, so that you can install Percona XtraDB Cluster nodes on different boxes.
+Derived from [perconalab/percona-xtradb-cluster](https://github.com/Percona-Lab/percona-xtradb-cluster-docker), the image supports running Percona XtraDB Cluster 5.6 with Docker orchestration tool like Docker Engine Swarm Mode and Kubernetes and requires etcd to operate correctly. It can also run on a standalone environment.
 
 Example deployment at Severalnines' [blog post](http://www.severalnines.com/blog).
+
 
 ## Requirement ##
 
 A healthy etcd cluster. Please refer to Severalnines' [blog post](http://www.severalnines.com/blog) for details.
 
+
 ## Image Description ##
 
 To pull the image, simply:
+
 ```bash
 $ docker pull severalnines/pxc56
 ```
@@ -33,6 +38,7 @@ The image consists of Percona XtraDB Cluster 5.6 and all of its components:
 * Percona Xtrabackup.
 * jq - Lightweight and flexible command-line JSON processor.
 * report_status.sh - report Galera status to etcd every `TTL`.
+
 
 ## Run Container ##
 
@@ -46,7 +52,9 @@ The Docker image accepts the following parameters:
 
 Minimum of 3 containers is recommended for high availability. Running standalone is also possible with standard "docker run" command as shown further down.
 
+
 ### Docker Engine Swarm Mode ###
+
 
 #### Ephemeral Storage ####
 
@@ -70,11 +78,11 @@ $ docker service create \
 severalnines/pxc56
 ```
 
+
 #### Persistent Storage ####
 
 Assuming:
 
-* Directory ``/mnt/docker/mysql`` is exist on all Docker host for persistent storage.
 * etcd cluster is running on 192.168.55.111:2379, 192.168.55.112:2379 and 192.168.55.113:2379.
 * Created an overlay network called ``galera-net``.
 
@@ -93,6 +101,7 @@ $ docker service create \
 --env CLUSTER_NAME=my_wsrep_cluster \
 severalnines/pxc56
 ```
+
 
 #### Custom my.cnf ####
 
@@ -125,15 +134,20 @@ Verify with:
 $ docker service ps mysql-galera
 ```
 
-Application should connect to the service via virtual IP address assigned by Docker Swarm mode:
+External applications/clients can connect to any Docker host IP address or hostname on port 3306, requests will be load balanced between the Galera containers. The connection gets NATed to a Virtual IP address for each service "task" (container, in this case) using the Linux kernel's built-in load balancing functionality, IPVS. If the application containers reside in the same overlay network (galera-net), then use the assigned virtual IP address instead.
+
+You can retrieve it using the inspect option:
 
 ```bash
 $ docker service inspect mysql-galera -f "{{ .Endpoint.VirtualIPs }}"
 ```
 
+
 ### Kubernetes ###
 
 Coming soon.
+
+
 
 ### Without Orchestration Tool ###
 
@@ -172,6 +186,7 @@ Verify with:
 $ docker ps
 ```
 
+
 ## Build Image ##
 
 To build Docker image, download the Docker related files available at [our Github repository](https://github.com/severalnines/galera-docker-pxc56):
@@ -183,15 +198,18 @@ $ docker build -t --rm=true severalnines/pxc56 .
 ```
 
 Verify with:
+
 ```bash
 $ docker images
 ```
+
 
 ## Discovery Service ##
 
 All nodes should report to etcd periodically with an expiring key. The default `TTL` value is 30 seconds. Container will report every `TTL - 2` seconds when it's alive (wsrep_cluster_state\_comment=Synced) via `report_status.sh`. If a container is down, it will no longer send an update to etcd thus the key (wsrep_cluster_state_comment) is removed after expiration. This simply indicates that the registered node is no longer synced with the cluster and it will be skipped when constructing the Galera communication address.
 
 To check the list of running nodes via etcd, run the following (assuming CLUSTER_NAME="my_wsrep_cluster"):
+
 ```javascript
 $ curl -s "http://192.168.55.111:2379/v2/keys/galera/my_wsrep_cluster?recursive=true" | python -m json.tool
 {
@@ -286,18 +304,28 @@ $ curl -s "http://192.168.55.111:2379/v2/keys/galera/my_wsrep_cluster?recursive=
 ```
 
 
-## Limitations ##
+## Known Limitations ##
 
 * The image are tested and built using Docker version 1.12.3, build 6b644ec on CentOS 7.1.
-* Currently there is no automatic cleanup for the discovery service registry. You can remove all entries using:
+
+* There will be no automatic recovery if a split-brain happens (where all nodes are in Non-Primary state). This is because the MySQL service is still running, yet it will refuse to serve any data and will return error to the client. Docker has no capability to detect this since what it cares about is the foreground MySQL process which is not terminated, killed or stopped. Automating this process is risky, especially if the service discovery is co-located with the Docker host (etcd would also lose contact with other members). Although if the service discovery is healthy somewhere else, it is probably unreachable from the Galera containers perspective, preventing each other to see the container’s status correctly during the glitch. In this case, you will need to intervene manually. Choose the most advanced node to bootstrap and then run the following command to promote the node as Primary (other nodes shall then rejoin automatically if the network recovers):
+
 ```bash
-curl http://192.168.55.111:2379/v2/keys/galera/my_wsrep_cluster?recursive=true -XDELETE
+$ docker exec -it [container] mysql -uroot -pyoursecret -e 'set global wsrep_provider_option="pc.bootstrap=1"'
+```
+
+* Also, there is no automatic cleanup for the discovery service registry. You can remove all entries using either the following command (assuming the CLUSTER_NAME is my_wsrep_cluster):
+
+```bash
+$ curl http://192.168.55.111:2379/v2/keys/galera/my_wsrep_cluster?recursive=true -XDELETE
 ```
 
 Or using etcdctl command:
+
 ```bash
-etcdctl rm /galera/my_wsrep_cluster --recursive
+$ etcdctl rm /galera/my_wsrep_cluster --recursive
 ```
+
 
 ## Development ##
 
