@@ -17,12 +17,12 @@
 
 Derived from [perconalab/percona-xtradb-cluster](https://github.com/Percona-Lab/percona-xtradb-cluster-docker), the image supports running Percona XtraDB Cluster 5.6 with Docker orchestration tool like Docker Engine Swarm Mode and Kubernetes and requires etcd to operate correctly. It can also run on a standalone environment.
 
-Example deployment at Severalnines' [blog post](http://www.severalnines.com/blog).
+Example deployment at Severalnines' [blog post](http://severalnines.com/blog/mysql-docker-deploy-homogeneous-galera-cluster-etcd).
 
 
 ## Requirement ##
 
-A healthy etcd cluster. Please refer to Severalnines' [blog post](http://www.severalnines.com/blog) for details.
+A healthy etcd cluster. Please refer to Severalnines' [blog post](http://severalnines.com/blog/mysql-docker-deploy-homogeneous-galera-cluster-etcd) on how to setup this.
 
 
 ## Image Description ##
@@ -308,7 +308,7 @@ $ curl -s "http://192.168.55.111:2379/v2/keys/galera/my_wsrep_cluster?recursive=
 
 * The image are tested and built using Docker version 1.12.3, build 6b644ec on CentOS 7.1.
 
-* There will be no automatic recovery if a split-brain happens (where all nodes are in Non-Primary state). This is because the MySQL service is still running, yet it will refuse to serve any data and will return error to the client. Docker has no capability to detect this since what it cares about is the foreground MySQL process which is not terminated, killed or stopped. Automating this process is risky, especially if the service discovery is co-located with the Docker host (etcd would also lose contact with other members). Although if the service discovery is healthy somewhere else, it is probably unreachable from the Galera containers perspective, preventing each other to see the container’s status correctly during the glitch. In this case, you will need to intervene manually. Choose the most advanced node to bootstrap and then run the following command to promote the node as Primary (other nodes shall then rejoin automatically if the network recovers):
+* There will be no automatic recovery if a split-brain happens (where all nodes are in Non-Primary state). This is because the MySQL service is still running, yet it will refuse to serve any data and will return error to the client. Docker has no capability to detect this since what it cares about is the foreground MySQL process which is not terminated, killed or stopped. Automating this process is risky, especially if the service discovery is co-located with the Docker host (etcd would also lose contact with other members). Although if the service discovery is healthy externally, it is probably unreachable from the Galera containers perspective, preventing each other to see the container’s status correctly during the glitch. In this case, you will need to intervene manually. Choose the most advanced node to bootstrap and then run the following command to promote the node as Primary (other nodes shall then rejoin automatically if the network recovers):
 
 ```bash
 $ docker exec -it [container] mysql -uroot -pyoursecret -e 'set global wsrep_provider_option="pc.bootstrap=1"'
