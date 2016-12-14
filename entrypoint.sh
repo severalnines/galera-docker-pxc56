@@ -146,7 +146,8 @@ else
 		addr=$(curl -s $URL | jq -r '.node.nodes[]?.key' | awk -F'/' '{print $(NF)}')
 		cluster_join=$(join , $addr)
 
-		ipaddr=$(hostname -I | awk {'print $1'})
+		ipaddr=$(ip a | grep eth0 | grep inet | awk {'print $2'} | cut -d '/' -f 1 | head -1)
+		[ -z $ipaddr ] && ipaddr=$(hostname -I | awk {'print $1'})
 
 		echo
 		if [ -z $cluster_join ]; then
@@ -269,6 +270,9 @@ fi
 echo 
 echo ">> Starting reporting script in the background"
 nohup /report_status.sh root $MYSQL_ROOT_PASSWORD $CLUSTER_NAME $TTL $DISCOVERY_SERVICE &
+
+# set IP address based on the primary interface
+sed -i "s|WSREP_NODE_ADDRESS|$ipaddr|g" /etc/my.cnf
 
 echo
 echo ">> Starting mysqld process"
