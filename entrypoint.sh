@@ -146,7 +146,7 @@ else
 		addr=$(curl -s $URL | jq -r '.node.nodes[]?.key' | awk -F'/' '{print $(NF)}')
 		cluster_join=$(join , $addr)
 
-		ipaddr=$(ip a | grep eth0 | grep inet | awk {'print $2'} | cut -d '/' -f 1 | head -1)
+		ipaddr=$(hostname -i | tr -d ' ')
 		[ -z $ipaddr ] && ipaddr=$(hostname -I | awk {'print $1'})
 
 		echo
